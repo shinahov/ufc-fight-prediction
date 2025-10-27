@@ -1,6 +1,7 @@
 *.csv
+*.pkl
 
-__pycach__/
+__pycache__/
 *.pyc
 *.log
 

@@ -12,6 +12,7 @@ from sklearn.utils.class_weight import compute_class_weight
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks, regularizers, optimizers, losses
+import joblib
 
 df = pd.read_csv("final_df.csv").drop(columns=["A_Name", "B_Name"])
 
@@ -24,8 +25,11 @@ for col in df.columns:
             diff_df["diff_" + suff] = df[col] - df[b]
 diff_df = pd.DataFrame(diff_df, index=df.index)
 
+diff_df = diff_df[sorted(diff_df.columns)]
 X_diff = diff_df.copy()
+
 X_diff["time_format"] = df["time_format"].astype(str).str.contains("5").astype(int)
+
 y_win = df["Winner_bin"].astype(int)
 
 forbidden = {"result_score", "end_round", "end_time", "Winner_bin", "date"}
@@ -39,26 +43,33 @@ fight_stat_cols = [
 X_fs = df[fight_stat_cols].apply(pd.to_numeric, errors="raise")
 
 idx_all = df.index
-train_idx, test_idx = train_test_split(idx_all, test_size=0.2, random_state=42, stratify=y_win)
+#train_idx, test_idx = train_test_split(idx_all, test_size=0.2, random_state=42, stratify=y_win)
+df["date"] = pd.to_datetime(df["date"])
+df_sorted = df.sort_values("date")
+
+split = int(0.8 * len(df_sorted))
+
+train_idx = df_sorted.index[:split]
+test_idx = df_sorted.index[split:]
 
 X_fs_train = X_fs.loc[train_idx]
-X_fs_test  = X_fs.loc[test_idx]
+X_fs_test = X_fs.loc[test_idx]
 X_diff_train = X_diff.loc[train_idx]
-X_diff_test  = X_diff.loc[test_idx]
+X_diff_test = X_diff.loc[test_idx]
 y_train_win = y_win.loc[train_idx]
-y_test_win  = y_win.loc[test_idx]
+y_test_win = y_win.loc[test_idx]
 
 sc_fs = StandardScaler().fit(X_fs_train)
 X_fs_train_s = sc_fs.transform(X_fs_train)
-X_fs_test_s  = sc_fs.transform(X_fs_test)
+X_fs_test_s = sc_fs.transform(X_fs_test)
 
 sc_diff = StandardScaler().fit(X_diff_train)
 X_diff_train_s = sc_diff.transform(X_diff_train)
-X_diff_test_s  = sc_diff.transform(X_diff_test)
+X_diff_test_s = sc_diff.transform(X_diff_test)
 
 def train_autoencoder_with_winhead(
     X_train, y_train, X_val=None, y_val=None,
-    *, latent_dim=5, noise_std=0.05,
+    *, latent_dim=8, noise_std=0.05,
     enc_sizes=(64, 32), dec_sizes=(32, 64),
     weight_decay=1e-4, lambda_win=0.25,
     lr=1e-3, batch_size=128, epochs=200, patience=12,
@@ -160,7 +171,7 @@ ae_res = train_autoencoder_with_winhead(
 )
 
 Z_train = ae_res["Z_train"]
-Z_test  = ae_res["Z_val"]
+Z_test = ae_res["Z_val"]
 
 def train_z_regressor(X_train, Z_train):
     reg = MultiOutputRegressor(
@@ -201,3 +212,13 @@ p_pred = clf.predict_proba(Z_pred_test)[:, 1]
 acc_pred = accuracy_score(y_test_win.values, y_hat_pred)
 auc_pred = roc_auc_score(y_test_win.values, p_pred)
 print(f"[Pipeline] Acc={acc_pred:.3f} AUC={auc_pred:.3f}")
+
+full_model = {
+    "encoder": ae_res["encoder"],
+    "z_reg": z_reg,
+    "clf": clf,
+    "sc_fs": sc_fs,
+    "sc_diff": sc_diff
+}
+joblib.dump(full_model, "fight_predict_pipeline.pkl")
+
