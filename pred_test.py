@@ -10,7 +10,7 @@ import pandas as pd
 fights0 = [
     ("Charles Oliveira", "Mateusz Gamrot", 5),
     ("Deiveson Figueiredo", "Montel Jackson", 3),
-    ("Joel Álvarez", "Vicente Luque", 3),
+    ("Joel Alvarez", "Vicente Luque", 3),
     ("Mario Pinto", "Jhonata Diniz", 3),
     ("Kaan Ofli", "Ricardo Ramos", 3),
     ("Michael Aswell", "Lucas Almeida", 3),
@@ -92,7 +92,15 @@ clf     = m["clf"]
 df = pd.read_csv("final_df.csv")
 
 
-def build_diff(nameA, nameB, df, sc_diff):
+def get_value(row, name, suffix):
+    if row["A_Name"] == name:
+        return float(row["A_" + suffix])
+    elif row["B_Name"] == name:
+        return float(row["B_" + suffix])
+    else:
+        raise ValueError(f"{name} nicht in Zeile")
+
+def build_diff(nameA, nameB, time, df, sc_diff):
 
     if nameA in df["A_Name"].values:
         rowA = df[df["A_Name"] == nameA].iloc[0]
@@ -109,17 +117,18 @@ def build_diff(nameA, nameB, df, sc_diff):
     else:
         raise ValueError(f"Kämpfer nicht gefunden: {nameB}")
 
-
     diff = {}
     for col in df.columns:
         if col.startswith("A_") and col != "A_Name":
             suff = col[2:]
             b = "B_" + suff
             if b in df.columns and b != "B_Name":
-                diff["diff_" + suff] = float(rowA[col]) - float(rowB[b])
+                valA = get_value(rowA, nameA, suff)
+                valB = get_value(rowB, nameB, suff)
+                diff["diff_" + suff] = valA - valB
 
 
-    diff["time_format"] = int("5" in str(rowA.get("time_format", "3")))
+    diff["time_format"] = 1 if int(time) == 5 else 0
 
 
     X_diff = pd.DataFrame([diff])
@@ -129,16 +138,16 @@ def build_diff(nameA, nameB, df, sc_diff):
     X_diff_s = sc_diff.transform(X_diff)
     return X_diff_s
 
-def predict_fight(nameA, nameB, df, model):
+def predict_fight(nameA, nameB, time, df, model):
     sc_diff = model["sc_diff"]
     z_reg   = model["z_reg"]
     clf     = model["clf"]
-    X_diff_new_s = build_diff(nameA, nameB, df, sc_diff)
+    X_diff_new_s = build_diff(nameA, nameB, time, df, sc_diff)
     Z_pred = z_reg.predict(X_diff_new_s)
     p_win = clf.predict_proba(Z_pred)[:, 1][0]
     return p_win
 
-def symmetric_prediction(nameA, nameB, df, model):
+def symmetric_prediction(nameA, nameB, time, df, model):
 
     all_names = set(df["A_Name"]).union(set(df["B_Name"]))
     if nameA not in all_names:
@@ -149,8 +158,8 @@ def symmetric_prediction(nameA, nameB, df, model):
         return None
 
 
-    p_AB = predict_fight(nameA, nameB, df, model)
-    p_BA = predict_fight(nameB, nameA, df, model)
+    p_AB = predict_fight(nameA, nameB, time, df, model)
+    p_BA = predict_fight(nameB, nameA, time, df, model)
     return (p_AB + (1 - p_BA)) / 2.0
 
 
@@ -159,7 +168,8 @@ errors = []
 for _, row in df_fights.iterrows():
     nameA = row["A_Name"]
     nameB = row["B_Name"]
-    p = symmetric_prediction(nameA, nameB, df, m)
+    timeFormat = row["time_format"]
+    p = symmetric_prediction(nameA, nameB, timeFormat, df, m)
     if p is None:
 
         continue
