@@ -12,6 +12,19 @@ df["event_date"] = pd.to_datetime(df["event_date"])
 df = df.sort_values("event_date", ascending=True).reset_index(drop=True)
 
 
+def zero():
+    return {
+        "fights": 0, "wins": 0,
+        "sig_l": 0, "sig_a": 0,
+        "tot_l": 0, "tot_a": 0,
+        "td_l": 0, "td_a": 0,
+        "sub": 0, "rev": 0,
+        "ctrl": 0, "kd": 0
+    }
+
+
+cum = defaultdict(zero)
+
 fighters = []
 
 for _, z in df.iterrows():
@@ -20,77 +33,73 @@ for _, z in df.iterrows():
     if z["fighter_b"] not in fighters:
         fighters.append(z["fighter_b"])
 
-#print(len(fighters))
-fighter_Stats = {}
+# print(len(fighters))
+fighter_Stats = []
 
-#for _, z in df.iterrows():
-for _, z in df.head(100).iterrows():
+# for _, z in df.iterrows():
+for i, z in df.head(100).iterrows():
     #  Fighter A
-    key_a = (z["fighter_a"], z["event_date"])
-    if key_a in fighter_Stats:
-        old = fighter_Stats[key_a]
-        fighter_Stats[key_a] = [
-            old[0] + z["a_sig_landed"],      # sig_landed
-            old[1] + z["a_sig_attempts"],    # sig_attempts
-            old[2] + z["a_total_landed"],    # total_landed
-            old[3] + z["a_total_attempts"],  # total_attempts
-            old[4] + z["a_td_landed"],       # td_landed
-            old[5] + z["a_td_attempts"],     # td_attempts
-            old[6] + z["a_sub_att"],         # sub_att
-            old[7] + z["a_rev"],             # reversals
-            old[8] + z["a_ctrl_sec"],        # control time
-            old[9] + z["a_kd"],              # knockdowns
-            old[10] + (1 if z["fighter_a"] == z["winner"] else 0)  # wins
-        ]
-    else:
-        fighter_Stats[key_a] = [
-            z["a_sig_landed"],
-            z["a_sig_attempts"],
-            z["a_total_landed"],
-            z["a_total_attempts"],
-            z["a_td_landed"],
-            z["a_td_attempts"],
-            z["a_sub_att"],
-            z["a_rev"],
-            z["a_ctrl_sec"],
-            z["a_kd"],
-            1 if z["fighter_a"] == z["winner"] else 0
-        ]
+    fighterA, fighterB = z["fighter_a"], z["fighter_b"]
+    date = z["event_date"]
 
-    # Fighter B
-    key_b = (z["fighter_b"], z["event_date"])
-    if key_b in fighter_Stats:
-        old = fighter_Stats[key_b]
-        fighter_Stats[key_b] = [
-            old[0] + z["b_sig_landed"],
-            old[1] + z["b_sig_attempts"],
-            old[2] + z["b_total_landed"],
-            old[3] + z["b_total_attempts"],
-            old[4] + z["b_td_landed"],
-            old[5] + z["b_td_attempts"],
-            old[6] + z["b_sub_att"],
-            old[7] + z["b_rev"],
-            old[8] + z["b_ctrl_sec"],
-            old[9] + z["b_kd"],
-            old[10] + (1 if z["fighter_b"] == z["winner"] else 0)
-        ]
-    else:
-        fighter_Stats[key_b] = [
-            z["b_sig_landed"],
-            z["b_sig_attempts"],
-            z["b_total_landed"],
-            z["b_total_attempts"],
-            z["b_td_landed"],
-            z["b_td_attempts"],
-            z["b_sub_att"],
-            z["b_rev"],
-            z["b_ctrl_sec"],
-            z["b_kd"],
-            1 if z["fighter_b"] == z["winner"] else 0
-        ]
+    A = cum[fighterA]
+    B = cum[fighterB]
+
+    fighter_Stats.append({
+        "event_date": date, "fight_order": i,
+        "fighter": fighterA,
+        "fights_prior": A["fights"], "wins_prior": A["wins"],
+        "sig_l_prior": A["sig_l"], "sig_a_prior": A["sig_a"],
+        "tot_l_prior": A["tot_l"], "tot_a_prior": A["tot_a"],
+        "td_l_prior": A["td_l"], "td_a_prior": A["td_a"],
+        "sub_prior": A["sub"], "rev_prior": A["rev"],
+        "ctrl_prior": A["ctrl"], "kd_prior": A["kd"],
+        "side": "A", "opponent": fighterB, "winner": z["winner"]
+    })
+    fighter_Stats.append({
+        "event_date": date, "fight_order": i,
+        "fighter": fighterB,
+        "fights_prior": B["fights"], "wins_prior": B["wins"],
+        "sig_l_prior": B["sig_l"], "sig_a_prior": B["sig_a"],
+        "tot_l_prior": B["tot_l"], "tot_a_prior": B["tot_a"],
+        "td_l_prior": B["td_l"], "td_a_prior": B["td_a"],
+        "sub_prior": B["sub"], "rev_prior": B["rev"],
+        "ctrl_prior": B["ctrl"], "kd_prior": B["kd"],
+        "side": "B", "opponent": fighterA, "winner": z["winner"]
+    })
+
+    cum[fighterA]["fights"] += 1
+    cum[fighterA]["wins"] += 1 if z["winner"] == fighterA else 0
+    cum[fighterA]["sig_l"] += z["a_sig_landed"]
+    cum[fighterA]["sig_a"] += z["a_sig_attempts"]
+    cum[fighterA]["tot_l"] += z["a_total_landed"]
+    cum[fighterA]["tot_a"] += z["a_total_attempts"]
+    cum[fighterA]["td_l"] += z["a_td_landed"]
+    cum[fighterA]["td_a"] += z["a_td_attempts"]
+    cum[fighterA]["sub"] += z["a_sub_att"]
+    cum[fighterA]["rev"] += z["a_rev"]
+    cum[fighterA]["ctrl"] += z["a_ctrl_sec"]
+    cum[fighterA]["kd"] += z["a_kd"]
+
+    cum[fighterB]["fights"] += 1
+    cum[fighterB]["wins"] += 1 if z["winner"] == fighterB else 0
+    cum[fighterB]["sig_l"] += z["a_sig_landed"]
+    cum[fighterB]["sig_a"] += z["a_sig_attempts"]
+    cum[fighterB]["tot_l"] += z["a_total_landed"]
+    cum[fighterB]["tot_a"] += z["a_total_attempts"]
+    cum[fighterB]["td_l"] += z["a_td_landed"]
+    cum[fighterB]["td_a"] += z["a_td_attempts"]
+    cum[fighterB]["sub"] += z["a_sub_att"]
+    cum[fighterB]["rev"] += z["a_rev"]
+    cum[fighterB]["ctrl"] += z["a_ctrl_sec"]
+    cum[fighterB]["kd"] += z["a_kd"]
 
 
-
-
-
-print(fighter_Stats)
+snap = pd.DataFrame(fighter_Stats)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+print(snap)
+print(cum)
+#print(fighter_Stats)
