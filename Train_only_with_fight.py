@@ -48,23 +48,35 @@ for i, z in df.head(100).iterrows():
     fighter_Stats.append({
         "event_date": date, "fight_order": i,
         "fighter": fighterA,
-        "fights_prior": A["fights"], "wins_prior": A["wins"],
-        "sig_l_prior": A["sig_l"], "sig_a_prior": A["sig_a"],
-        "tot_l_prior": A["tot_l"], "tot_a_prior": A["tot_a"],
-        "td_l_prior": A["td_l"], "td_a_prior": A["td_a"],
-        "sub_prior": A["sub"], "rev_prior": A["rev"],
-        "ctrl_prior": A["ctrl"], "kd_prior": A["kd"],
+        "fights_prior": A["fights"],
+        "wins_prior": A["wins"],
+        "sig_l_prior": A["sig_l"],
+        "sig_a_prior": A["sig_a"],
+        "tot_l_prior": A["tot_l"],
+        "tot_a_prior": A["tot_a"],
+        "td_l_prior": A["td_l"],
+        "td_a_prior": A["td_a"],
+        "sub_prior": A["sub"],
+        "rev_prior": A["rev"],
+        "ctrl_prior": A["ctrl"],
+        "kd_prior": A["kd"],
         "side": "A", "opponent": fighterB, "winner": z["winner"]
     })
     fighter_Stats.append({
         "event_date": date, "fight_order": i,
         "fighter": fighterB,
-        "fights_prior": B["fights"], "wins_prior": B["wins"],
-        "sig_l_prior": B["sig_l"], "sig_a_prior": B["sig_a"],
-        "tot_l_prior": B["tot_l"], "tot_a_prior": B["tot_a"],
-        "td_l_prior": B["td_l"], "td_a_prior": B["td_a"],
-        "sub_prior": B["sub"], "rev_prior": B["rev"],
-        "ctrl_prior": B["ctrl"], "kd_prior": B["kd"],
+        "fights_prior": B["fights"],
+        "wins_prior": B["wins"],
+        "sig_l_prior": B["sig_l"],
+        "sig_a_prior": B["sig_a"],
+        "tot_l_prior": B["tot_l"],
+        "tot_a_prior": B["tot_a"],
+        "td_l_prior": B["td_l"],
+        "td_a_prior": B["td_a"],
+        "sub_prior": B["sub"],
+        "rev_prior": B["rev"],
+        "ctrl_prior": B["ctrl"],
+        "kd_prior": B["kd"],
         "side": "B", "opponent": fighterA, "winner": z["winner"]
     })
 
@@ -83,16 +95,16 @@ for i, z in df.head(100).iterrows():
 
     cum[fighterB]["fights"] += 1
     cum[fighterB]["wins"] += 1 if z["winner"] == fighterB else 0
-    cum[fighterB]["sig_l"] += z["a_sig_landed"]
-    cum[fighterB]["sig_a"] += z["a_sig_attempts"]
-    cum[fighterB]["tot_l"] += z["a_total_landed"]
-    cum[fighterB]["tot_a"] += z["a_total_attempts"]
-    cum[fighterB]["td_l"] += z["a_td_landed"]
-    cum[fighterB]["td_a"] += z["a_td_attempts"]
-    cum[fighterB]["sub"] += z["a_sub_att"]
-    cum[fighterB]["rev"] += z["a_rev"]
-    cum[fighterB]["ctrl"] += z["a_ctrl_sec"]
-    cum[fighterB]["kd"] += z["a_kd"]
+    cum[fighterB]["sig_l"] += z["b_sig_landed"]
+    cum[fighterB]["sig_a"] += z["b_sig_attempts"]
+    cum[fighterB]["tot_l"] += z["b_total_landed"]
+    cum[fighterB]["tot_a"] += z["b_total_attempts"]
+    cum[fighterB]["td_l"] += z["b_td_landed"]
+    cum[fighterB]["td_a"] += z["b_td_attempts"]
+    cum[fighterB]["sub"] += z["b_sub_att"]
+    cum[fighterB]["rev"] += z["b_rev"]
+    cum[fighterB]["ctrl"] += z["b_ctrl_sec"]
+    cum[fighterB]["kd"] += z["b_kd"]
 
 
 snap = pd.DataFrame(fighter_Stats)

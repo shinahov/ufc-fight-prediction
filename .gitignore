@@ -1,5 +1,7 @@
 *.csv
 *.pkl
+*.txt
+*.json
 
 __pycach__/
 *.pyc
