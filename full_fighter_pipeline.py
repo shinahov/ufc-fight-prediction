@@ -4,7 +4,7 @@ import pandas as pd
 from collections import defaultdict
 
 # --- Load & sort ---
-df = pd.read_csv("fights_new_copy.csv")
+df = pd.read_csv("fights_new.csv")
 df["event_date"] = pd.to_datetime(df["event_date"])
 df = df.sort_values("event_date", ascending=True).reset_index(drop=True)
 
@@ -234,3 +234,16 @@ else:
     print(err_df.sort_values(["fighter", "event_date", "fight_order"]).head(20))
     # Optional: alle Abweichungen speichern
     err_df.to_csv("prior_validation_errors.csv", index=False)
+
+#pd.set_option("display.max_rows", None)        # zeigt ALLE Zeilen
+#pd.set_option("display.max_columns", None)     # zeigt ALLE Spalten
+#pd.set_option("display.width", None)           # keine Zeilenumbrüche
+#pd.set_option("display.max_colwidth", None)    # volle Spaltenbreite
+print(snap.tail(10))
+snap.to_csv("snapshot.csv", index=False)
+
+snap2 = pd.read_csv("snapshot.csv")
+print(len(snap2), "Zeilen")       # sollte == len(snap)
+print(len(snap2.columns), "Spalten")
+
+#print(snap)
