@@ -17,12 +17,35 @@ META_COLS = {
     "fighter_a","fighter_b","winner",
     "method","end_round","end_time","referee","time_format","judges_details"
 }
+def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, K: float = 32):
+    """
+    Berechnet neue Elo-Werte für Fighter A und B.
+    Gibt (elo_a_post, elo_b_post) zurück.
+    """
+    # Erwartete Gewinnwahrscheinlichkeiten
+    Ea = 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
+    Eb = 1 - Ea
+
+    # Tatsächliche Ergebnisse
+    if winner == fighterA:
+        Sa, Sb = 1, 0
+    elif winner == fighterB:
+        Sa, Sb = 0, 1
+    else:
+        Sa, Sb = 0.5, 0.5  # Draw oder NC
+
+    # Neue Ratings
+    ra_post = elo_a + K * (Sa - Ea)
+    rb_post = elo_b + K * (Sb - Eb)
+
+    return ra_post, rb_post
 
 def new_fighter_state():
     """Cumulative store per fighter: dynamic numeric metrics + fights/wins."""
     d = defaultdict(float)
     d["fights"] = 0.0
     d["wins"]   = 0.0
+    d["elo"] = 1500.0
     return d
 
 cum = defaultdict(new_fighter_state)
@@ -106,6 +129,10 @@ for i, z in df.iterrows():
         **{f"prior__{k}": float(v) for k, v in priorB.items()}
     })
 
+    elo_a = cum[fighterA]["elo"]
+    elo_b = cum[fighterB]["elo"]
+    ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB)
+
     # ---- Update cumulative states with this fight ----
     # fights/wins
     cum[fighterA]["fights"] += 1
@@ -123,6 +150,9 @@ for i, z in df.iterrows():
         cum[fighterA][k] += v
     for k, v in addB.items():
         cum[fighterB][k] += v
+
+    cum[fighterA]["elo"] = ra_post
+    cum[fighterB]["elo"] = rb_post
 
 # --------------- Result DataFrames ---------------
 snap = pd.DataFrame(snap_rows).sort_values(
@@ -245,5 +275,12 @@ snap.to_csv("snapshot.csv", index=False)
 snap2 = pd.read_csv("snapshot.csv")
 print(len(snap2), "Zeilen")       # sollte == len(snap)
 print(len(snap2.columns), "Spalten")
+
+final_elos = [(name, stats["elo"]) for name, stats in cum.items()]
+top20 = sorted(final_elos, key=lambda x: x[1], reverse=True)[:20]
+
+print("Top 20 Fighter nach Elo:")
+for name, elo in top20:
+    print(f"{name:25s} {elo:.2f}")
 
 #print(snap)
