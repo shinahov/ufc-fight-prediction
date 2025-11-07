@@ -51,7 +51,9 @@ X = pd.DataFrame(
     columns=[f"diff::{c}" for c in prior_cols] + [f"ratio::{c}" for c in prior_cols]
 ).replace([np.inf, -np.inf], np.nan).fillna(0).astype(np.float32)
 
+
 y = (A["winner"] == A["fighter"]).astype(int).to_numpy()
+print((y == 0).sum() / (y == 1).sum())
 groups = A["fight_order"].to_numpy()
 
 # Klassenbalance anzeigen
@@ -74,6 +76,7 @@ print("Train/Val/Test sizes:", X_tr.shape, X_va.shape, X_te.shape)
 
 # ----------------- Model & Training -----------------
 model = xgb.XGBClassifier(
+    scale_pos_weight=(y == 0).sum() / (y == 1).sum(),
     n_estimators=3000,
     learning_rate=0.02,
     max_depth=4,

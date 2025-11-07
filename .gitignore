@@ -10,3 +10,5 @@ __pycach__/
 .DS_Store
 .idea/
 .vscode/
+
+test-s.py
