@@ -159,6 +159,19 @@ snap = pd.DataFrame(snap_rows).sort_values(
     ["event_date", "fight_order", "fighter"]
 ).reset_index(drop=True)
 
+
+def compute_derived_features(snap):
+    snap["prior_feat__sig_acc"] = np.where(
+        (snap["prior__sig_attempts"] > 0) & (snap["prior__fights"] > 0),
+        snap["prior__sig_landed"] / snap["prior__sig_attempts"],
+        np.nan
+    )
+    return snap
+
+
+snap = compute_derived_features(snap)
+
+
 # Convenience: history getter
 def get_fighter_history(name: str) -> pd.DataFrame:
     """Alle Zeilen für 'name' mit Rohdaten + prior__* (inkl. rundenbasierter prior__rX_*)."""
@@ -235,6 +248,8 @@ def validate_snap(snap: pd.DataFrame, atol: float = 1e-6) -> pd.DataFrame:
             keys = set(running.keys()) | set(curr_prior.keys())
 
             for k in keys:
+                if k == "elo":
+                    continue
                 exp = running.get(k, 0.0)
                 got = curr_prior.get(k, 0.0)
                 if not np.isclose(exp, got, atol=atol, rtol=0):

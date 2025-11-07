@@ -10,6 +10,15 @@ df = pd.read_csv("snapshot.csv")
 
 # Nur Kämpfer mit Historie + bekanntem Sieger
 df = df[(df["prior__fights"] > 0) & (df["winner"].notna())].copy()
+grp = df.groupby("fight_order")["side"].nunique()
+valid_ids = grp[grp == 2].index
+df = df[df["fight_order"].isin(valid_ids)].copy()
+
+# 3) Kontrolle
+print(df["side"].value_counts())
+
+print(df[["fighter_a", "fighter_b", "winner"]].head(40))
+
 
 # Sicherstellen: pro fight_order genau 2 Zeilen (A & B)
 cnt = df.groupby("fight_order").size()
@@ -27,7 +36,7 @@ B = df[df["side"] == "B"].sort_values("fight_order").reset_index(drop=True)
 # Sanity: gleiche Fight-IDs?
 assert np.array_equal(A["fight_order"].values, B["fight_order"].values), "A/B nicht ausrichtbar."
 
-prior_cols = [c for c in df.columns if c.startswith("prior__")]
+prior_cols = [c for c in df.columns if c.startswith("prior_")]
 
 A_vals = A[prior_cols].to_numpy(dtype=np.float32)
 B_vals = B[prior_cols].to_numpy(dtype=np.float32)
@@ -97,7 +106,7 @@ eval_set(X_te, y_te, "TEST")
 
 # ----------------- Feature Importance (gain) -----------------
 imp_gain = model.get_booster().get_score(importance_type="gain")
-top = sorted(imp_gain.items(), key=lambda x: x[1], reverse=True)[:20]
+top = sorted(imp_gain.items(), key=lambda x: x[1], reverse=True)#[:40]
 print("Top-Features (gain):")
 for k, v in top:
     print(k, round(v, 3))
