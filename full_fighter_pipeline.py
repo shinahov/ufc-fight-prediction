@@ -61,6 +61,12 @@ df_stats["name"] = df_stats["name"].apply(normalize_name)
 stats_index = df_stats.set_index("name")
 
 def get_stats(name : str, on_date : pd.Timestamp) -> dict:
+    STANCE_MAP = {
+        "orthodox": 0,
+        "southpaw": 1,
+        "switch": 2
+    }
+
     key = normalize_name(name)
     if key not in stats_index.index:
         return {}
@@ -72,7 +78,12 @@ def get_stats(name : str, on_date : pd.Timestamp) -> dict:
     out["reach"]  = float(row["reach"])  if pd.notna(row["reach"])  else np.nan
     # age are from 2024
     out["age"]    = row["age"]+1 - (2025 - on_date.year) if pd.notna(row["age"]) else np.nan
-    out["stance"] = row["stance"] if pd.notna(row["stance"]) else "Unknown"
+    if pd.notna(row["stance"]):
+        stance = str(row["stance"]).strip().lower()
+        out["stance"] = STANCE_MAP.get(stance, -1)
+    else:
+        out["stance"] = -1
+
     return out
 
     #if "height" in row and pd.notna
