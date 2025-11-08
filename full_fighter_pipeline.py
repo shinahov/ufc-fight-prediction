@@ -5,6 +5,7 @@ from collections import defaultdict
 
 # --- Load & sort ---
 df = pd.read_csv("fights_new.csv")
+df_stats = pd.read_csv("fighter_stats.csv")
 df["event_date"] = pd.to_datetime(df["event_date"])
 df = df.sort_values("event_date", ascending=True).reset_index(drop=True)
 
@@ -17,6 +18,12 @@ META_COLS = {
     "fighter_a","fighter_b","winner",
     "method","end_round","end_time","referee","time_format","judges_details"
 }
+
+def normalize_name(s):
+    if isinstance(s, str):
+        return s.strip().lower().replace("-", " ").replace(".", "").replace("'", "")
+    return s
+
 def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, K: float = 32):
     """
     Berechnet neue Elo-Werte für Fighter A und B.
@@ -49,6 +56,20 @@ def new_fighter_state():
     return d
 
 cum = defaultdict(new_fighter_state)
+df_stats = df_stats[~df_stats["name"].duplicated(keep=False)]
+df_stats["name"] = df_stats["name"].apply(normalize_name)
+stats_index = df_stats.set_index("name")
+
+def get_stats(name : str) -> dict:
+    key = normalize_name(name)
+    if key not in stats_index.index:
+        return {}
+    row = stats_index.loc[key]
+
+    out = {}
+    return out
+
+    #if "height" in row and pd.notna
 
 def is_number(x) -> bool:
     return isinstance(x, (int, float, np.integer, np.floating)) and np.isfinite(x)
