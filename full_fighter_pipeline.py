@@ -5,7 +5,7 @@ from collections import defaultdict
 
 # --- Load & sort ---
 df = pd.read_csv("fights_new.csv")
-df_stats = pd.read_csv("fighter_stats.csv")
+df_stats = pd.read_csv("fighter_stats_imputed.csv")
 df["event_date"] = pd.to_datetime(df["event_date"])
 df = df.sort_values("event_date", ascending=True).reset_index(drop=True)
 
@@ -60,13 +60,19 @@ df_stats = df_stats[~df_stats["name"].duplicated(keep=False)]
 df_stats["name"] = df_stats["name"].apply(normalize_name)
 stats_index = df_stats.set_index("name")
 
-def get_stats(name : str) -> dict:
+def get_stats(name : str, on_date : pd.Timestamp) -> dict:
     key = normalize_name(name)
     if key not in stats_index.index:
         return {}
     row = stats_index.loc[key]
 
     out = {}
+    out["height"] = float(row["height"]) if pd.notna(row["height"]) else np.nan
+    out["weight"] = float(row["weight"]) if pd.notna(row["weight"]) else np.nan
+    out["reach"]  = float(row["reach"])  if pd.notna(row["reach"])  else np.nan
+    # age are from 2024
+    out["age"]    = row["age"]+1 - (2025 - on_date.year) if pd.notna(row["age"]) else np.nan
+    out["stance"] = row["stance"] if pd.notna(row["stance"]) else "Unknown"
     return out
 
     #if "height" in row and pd.notna
@@ -126,6 +132,8 @@ for i, z in df.iterrows():
     # prior states (copy to avoid mutation later)
     priorA = dict(cum[fighterA])
     priorB = dict(cum[fighterB])
+    prior_stats_A = get_stats(fighterA, date)
+    prior_stats_B = get_stats(fighterB, date)
 
     # ---- Write snapshots (prior) ----
     # We attach ALL raw fight columns + prior__*
@@ -138,7 +146,8 @@ for i, z in df.iterrows():
         "opponent": fighterB,
         "winner": z["winner"],
         **raw,
-        **{f"prior__{k}": float(v) for k, v in priorA.items()}
+        **{f"prior__{k}": float(v) for k, v in priorA.items()},
+        **{f"prior_stats__{k}": float(v) if is_number(v) else v for k, v in prior_stats_A.items()}
     })
     snap_rows.append({
         "event_date": date,
@@ -147,7 +156,8 @@ for i, z in df.iterrows():
         "opponent": fighterA,
         "winner": z["winner"],
         **raw,
-        **{f"prior__{k}": float(v) for k, v in priorB.items()}
+        **{f"prior__{k}": float(v) for k, v in priorB.items()},
+        **{f"prior_stats__{k}": float(v) if is_number(v) else v for k, v in prior_stats_B.items()}
     })
 
     elo_a = cum[fighterA]["elo"]
