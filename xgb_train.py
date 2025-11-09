@@ -4,6 +4,9 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix
 import xgboost as xgb
 from xgboost.callback import EarlyStopping
+from sklearn.preprocessing import StandardScaler
+from tensorflow import keras
+from tensorflow.keras import layers
 
 # ----------------- Load & Clean -----------------
 df = pd.read_csv("snapshot.csv")
@@ -72,7 +75,56 @@ tr_idx, va_idx = next(gss2.split(X_trval, y_trval, grp_trval))
 X_tr, X_va = X_trval.iloc[tr_idx], X_trval.iloc[va_idx]
 y_tr, y_va = y_trval[tr_idx], y_trval[va_idx]
 
+X_tr_f = X_tr.fillna(0.0).to_numpy(np.float32)
+X_va_f = X_va.fillna(0.0).to_numpy(np.float32)
+X_te_f = X_te.fillna(0.0).to_numpy(np.float32)
+y_tr_f = y_tr.astype(np.float32)
+y_va_f = y_va.astype(np.float32)
+y_te_f = y_te.astype(np.float32)
+
+scaler = StandardScaler()
+X_tr_s = scaler.fit_transform(X_tr_f).astype(np.float32)
+X_va_s = scaler.transform(X_va_f).astype(np.float32)
+X_te_s = scaler.transform(X_te_f).astype(np.float32)
+
+in_dim, latent_dim = X_tr_s.shape[1], 32
+
+inp = layers.Input((in_dim,))
+h = layers.Dense(128, activation="relu")(inp)
+z  = layers.Dense(latent_dim, name="z")(h)
+
+d = layers.Dense(128, activation="relu")(z)
+x_hat = layers.Dense(in_dim, name="x_hat")(d)
+
+c = layers.Dense(64, activation="relu")(z)
+y_hat = layers.Dense(1, activation="sigmoid", name="y_hat")(c)
+
+model = keras.Model(inp, [x_hat, y_hat])
+model.compile(
+    optimizer=keras.optimizers.Adam(1e-3),
+    loss={"x_hat": "mse", "y_hat": "binary_crossentropy"},
+    loss_weights={"x_hat": 1.0, "y_hat": 2.0},
+    metrics={"y_hat": [keras.metrics.AUC(name="auc"), "accuracy"]},
+)
+cb = [keras.callbacks.EarlyStopping(monitor="val_y_hat_auc", mode="max", patience=15, restore_best_weights=True)]
+
+model.fit(
+    X_tr_s, {"x_hat": X_tr_s, "y_hat": y_tr_f},
+    validation_data=(X_va_s, {"x_hat": X_va_s, "y_hat": y_va_f}),
+    epochs=300, batch_size=256, verbose=1, callbacks=cb
+)
+
+_, proba = model.predict(X_te_s, verbose=0)
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+print("Autoencoder Results:")
+print("TEST Acc/AUC:", accuracy_score(y_te_f, (proba[:,0] >= 0.5)), roc_auc_score(y_te_f, proba[:,0]))
+print("VAL Acc/AUC:", accuracy_score(y_va_f, (model.predict(X_va_s, verbose=0)[1][:,0] >= 0.5)), roc_auc_score(y_va_f, model.predict(X_va_s, verbose=0)[1][:,0]))
+
+
+
 print("Train/Val/Test sizes:", X_tr.shape, X_va.shape, X_te.shape)
+print("XGb boost results:")
 
 # ----------------- Model & Training -----------------
 model = xgb.XGBClassifier(
