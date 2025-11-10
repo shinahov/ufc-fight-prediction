@@ -24,13 +24,130 @@ def normalize_name(s):
         return s.strip().lower().replace("-", " ").replace(".", "").replace("'", "")
     return s
 
-def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, K: float = 32):
+
+def compute_total_time(end_round, end_time_str):
+    """
+    Berechnet die vergangene Zeit im Kampf in Sekunden.
+    end_round: int (1–5)
+    end_time_str: 'M:SS', z.B. '4:22'
+    """
+    try:
+        minutes, seconds = map(int, str(end_time_str).split(":"))
+    except Exception:
+        minutes, seconds = 0, 0
+    return (int(end_round) - 1) * 5 * 60 + minutes * 60 + seconds
+
+
+def categorize_method(method_raw: str) -> str:
+    """
+    Normalisiert die Finish-/Methodenbeschreibung in feste Kategorien.
+    """
+    s = (method_raw or "").strip().lower()
+    s = s.replace("’", "'").replace("—", "-")
+
+    if "overturned" in s:
+        return "overturned"
+    if "could not continue" in s:
+        return "could_not_continue"
+    if "doctor" in s:
+        return "doctor_stoppage"
+    if "disqualification" in s or "dq" in s:
+        return "dq"
+    if "submission" in s or "sub" in s:
+        return "sub"
+    if "ko" in s or "tko" in s:
+        return "ko_tko"
+    if "unanimous" in s:
+        return "decision_unanimous"
+    if "split" in s:
+        return "decision_split"
+    if "majority" in s:
+        return "decision_majority"
+    if "decision" in s or "dec" in s:
+        return "decision_unanimous"
+    return "unknown"
+
+
+def compute_finish_units(method_cat: str, t: float, Ttot: float) -> float:
+    """
+    Berechnet die Strike-äquivalenten Finish-Punkte basierend auf Methode und Zeit.
+    """
+    BASE_UNITS = {
+        "ko_tko": 30.0,
+        "sub": 24.0,
+        "doctor_stoppage": 8.0,
+        "could_not_continue": 6.0,
+        "dq": 1.0,
+        "decision_unanimous": 5.0,
+        "decision_split": 2.0,
+        "decision_majority": 3.0,
+        "overturned": 0.0,
+        "unknown": 0.0,
+    }
+    TIME_AFFECTS = {"ko_tko", "sub", "doctor_stoppage", "could_not_continue", "dq"}
+
+    base = BASE_UNITS.get(method_cat, 0.0)
+    EARLY_BOOST = 2.5
+
+    if base <= 0:
+        return 0.0
+
+    progress = max(0.0, min(1.0, t / Ttot))
+    if method_cat in TIME_AFFECTS:
+        return base * (1.0 + EARLY_BOOST * (1.0 - progress))
+    return base
+
+
+def compute_dominance_simple(m):
+    """
+    Berechnet den Dominanz-Score für Fighter A.
+    """
+    # --- Äquivalenzen ---
+    TD_EQ_SIG   = 5.0
+    CTRL_SIG_S  = TD_EQ_SIG / 40
+    KD_EQ_SIG   = 8.0
+
+    # --- Deltas ---
+    sig_net  = float(m.get("sig_strikes_a", 0)) - float(m.get("sig_strikes_b", 0))
+    td_net   = float(m.get("takedowns_a", 0))   - float(m.get("takedowns_b", 0))
+    ctrl_net = float(m.get("control_sec_a", 0)) - float(m.get("control_sec_b", 0))
+    kd_net   = float(m.get("knockdowns_a", 0))  - float(m.get("knockdowns_b", 0))
+
+    # --- Basisscore in Strike-Einheiten ---
+    sig_units = sig_net + TD_EQ_SIG*td_net + CTRL_SIG_S*ctrl_net + KD_EQ_SIG*kd_net
+
+    # --- Zeitberechnung ---
+    t = compute_total_time(m.get("end_round", 5), m.get("end_time", "5:00"))
+    Ttot = 1500.0
+
+    # --- Methode & Finish-Einheiten ---
+    method_cat = categorize_method(m.get("method") or m.get("finish"))
+    finish_units = compute_finish_units(method_cat, t, Ttot)
+
+    # --- Gesamtscore ---
+    score = sig_units + finish_units
+
+    return {
+        "score": score,
+        "components": {
+            "sig_units_base": sig_units,
+            "finish_units": finish_units,
+            "method_cat": method_cat,
+            "t": t, "Ttot": Ttot,
+            "sig_net": sig_net, "td_net": td_net,
+            "ctrl_sec_net": ctrl_net, "kd_net": kd_net,
+        },
+    }
+
+
+
+def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, dominance_score: float | None = None, K: float = 80):
     """
     Berechnet neue Elo-Werte für Fighter A und B.
     Gibt (elo_a_post, elo_b_post) zurück.
     """
     # Erwartete Gewinnwahrscheinlichkeiten
-    Ea = 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
+    Ea = 1 / (1 + 10 ** ((elo_b - elo_a) / 250))
     Eb = 1 - Ea
 
     # Tatsächliche Ergebnisse
@@ -40,6 +157,13 @@ def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fi
         Sa, Sb = 0, 1
     else:
         Sa, Sb = 0.5, 0.5  # Draw oder NC
+
+    dom_mult = 1.0
+    if dominance_score is not None:
+
+        dom_mult = 1.0 + max(-1.0, min(1.0, dominance_score / 100.0))
+
+    K *= dom_mult
 
     # Neue Ratings
     ra_post = elo_a + K * (Sa - Ea)
@@ -173,7 +297,24 @@ for i, z in df.iterrows():
 
     elo_a = cum[fighterA]["elo"]
     elo_b = cum[fighterB]["elo"]
-    ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB)
+
+    m = {
+        "sig_strikes_a": z.get("a_sig_landed", 0),
+        "sig_strikes_b": z.get("b_sig_landed", 0),
+        "takedowns_a": z.get("a_td_landed", 0),
+        "takedowns_b": z.get("b_td_landed", 0),
+        "control_sec_a": z.get("a_ctrl_sec", 0),
+        "control_sec_b": z.get("b_ctrl_sec", 0),
+        "knockdowns_a": z.get("a_kd", 0),
+        "knockdowns_b": z.get("b_kd", 0),
+        "method": z.get("method", ""),
+        "end_round": z.get("end_round", 3),
+        "end_time": z.get("end_time", "5:00"),
+    }
+
+    dom_res = compute_dominance_simple(m)
+    dom_score = dom_res["score"]
+    ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=80)
 
     # ---- Update cumulative states with this fight ----
     # fights/wins
