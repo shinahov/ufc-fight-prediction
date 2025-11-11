@@ -331,8 +331,10 @@ for i, z in df.iterrows():
     addB = extract_additions(z, "b_")
     for k, v in addA.items():
         cum[fighterA][k] += v
+        cum[fighterB][k + "_rec"] += v
     for k, v in addB.items():
         cum[fighterB][k] += v
+        cum[fighterA][k + "_rec"] += v
 
     cum[fighterA]["elo"] = ra_post
     cum[fighterB]["elo"] = rb_post
