@@ -73,14 +73,14 @@ def compute_finish_units(method_cat: str, t: float, Ttot: float) -> float:
     Berechnet die Strike-äquivalenten Finish-Punkte basierend auf Methode und Zeit.
     """
     BASE_UNITS = {
-        "ko_tko": 30.0,
-        "sub": 24.0,
-        "doctor_stoppage": 8.0,
-        "could_not_continue": 6.0,
+        "ko_tko": 25.0,
+        "sub": 20.0,
+        "doctor_stoppage": 5.0,
+        "could_not_continue": 3.0,
         "dq": 1.0,
-        "decision_unanimous": 5.0,
-        "decision_split": 2.0,
-        "decision_majority": 3.0,
+        "decision_unanimous": 1.0,
+        "decision_split": 1.0,
+        "decision_majority": 1.0,
         "overturned": 0.0,
         "unknown": 0.0,
     }
@@ -112,6 +112,7 @@ def compute_dominance_simple(m):
     td_net   = float(m.get("takedowns_a", 0))   - float(m.get("takedowns_b", 0))
     ctrl_net = float(m.get("control_sec_a", 0)) - float(m.get("control_sec_b", 0))
     kd_net   = float(m.get("knockdowns_a", 0))  - float(m.get("knockdowns_b", 0))
+    winner_side = m.get("winner", None)
 
     # --- Basisscore in Strike-Einheiten ---
     sig_units = sig_net + TD_EQ_SIG*td_net + CTRL_SIG_S*ctrl_net + KD_EQ_SIG*kd_net
@@ -125,7 +126,10 @@ def compute_dominance_simple(m):
     finish_units = compute_finish_units(method_cat, t, Ttot)
 
     # --- Gesamtscore ---
-    score = sig_units + finish_units
+    if winner_side == "A":
+        score = sig_units + finish_units
+    elif winner_side == "B":
+        score = sig_units - finish_units
 
     return {
         "score": score,
@@ -297,6 +301,7 @@ for i, z in df.iterrows():
 
     elo_a = cum[fighterA]["elo"]
     elo_b = cum[fighterB]["elo"]
+    winner_side = "A" if z["winner"] == fighterA else "B"
 
     m = {
         "sig_strikes_a": z.get("a_sig_landed", 0),
@@ -310,9 +315,12 @@ for i, z in df.iterrows():
         "method": z.get("method", ""),
         "end_round": z.get("end_round", 3),
         "end_time": z.get("end_time", "5:00"),
+        "winner": winner_side
     }
 
     dom_res = compute_dominance_simple(m)
+    print(f"Fight {i}: {fighterA} vs {fighterB}, Dom Score A: {dom_res['score']:.2f}")
+    print(f"m details: {m}")
     dom_score = dom_res["score"]
     ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=80)
 
