@@ -327,7 +327,7 @@ for i, z in df.iterrows():
     print(f"Fight {i}: {fighterA} vs {fighterB}, Dom Score A: {dom_res['score']:.2f}")
     print(f"m details: {m}")
     dom_score = dom_res["score"]
-    ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=80)
+    ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=120)
 
     # ---- Update cumulative states with this fight ----
     # fights/wins

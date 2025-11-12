@@ -11,6 +11,18 @@ from tensorflow.keras import layers
 
 # ----------------- Load & Clean -----------------
 df = pd.read_csv("snapshot.csv")
+df["event_date"] = pd.to_datetime(df["event_date"])
+
+max = df["event_date"].max()
+delta = (max - df["event_date"]).dt.days
+
+half_life = 365.0  # 1 Jahr
+wights = np.power(2.0, -delta / half_life)
+
+wights /= wights.mean()
+
+df["weight"] = wights
+
 
 # Nur Kämpfer mit Historie + bekanntem Sieger
 df = df[(df["prior__fights"] > 0) & (df["winner"].notna())].copy()
@@ -65,16 +77,25 @@ vals, cnts = np.unique(y, return_counts=True)
 print("Label-Verteilung (A gewinnt?):", dict(zip(vals, np.round(cnts / cnts.sum(), 3))))
 
 # ----------------- Grouped Train/Val/Test Split -----------------
-gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-trval_idx, te_idx = next(gss.split(X, y, groups))
-X_trval, X_te = X.iloc[trval_idx], X.iloc[te_idx]
-y_trval, y_te = y[trval_idx], y[te_idx]
-grp_trval = groups[trval_idx]
+# Anzahl Gesamtzeilen
+n = len(X)
 
-gss2 = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=43)
-tr_idx, va_idx = next(gss2.split(X_trval, y_trval, grp_trval))
-X_tr, X_va = X_trval.iloc[tr_idx], X_trval.iloc[va_idx]
-y_tr, y_va = y_trval[tr_idx], y_trval[va_idx]
+# Prozentuale Aufteilung wie oben (Train/Val/Test)
+train_size = 0.80
+val_size   = 0.10
+test_size  = 0.10
+
+# Splitpunkte
+tr_end = int(train_size * n)
+va_end = int((train_size + val_size) * n)
+
+# Datensätze in Reihenfolge (kein Shuffle)
+X_tr, y_tr = X.iloc[:tr_end], y[:tr_end]
+X_va, y_va = X.iloc[tr_end:va_end], y[tr_end:va_end]
+X_te, y_te = X.iloc[va_end:], y[va_end:]
+
+print(f"Train: {len(X_tr)}, Val: {len(X_va)}, Test: {len(X_te)}")
+
 
 X_tr_f = X_tr.fillna(0.0).to_numpy(np.float32)
 X_va_f = X_va.fillna(0.0).to_numpy(np.float32)
@@ -174,11 +195,19 @@ model = xgb.XGBClassifier(
     early_stopping_rounds=100  # funktioniert bei 2.1.3
 )
 
+n = len(X_tr)
+w_tr = np.linspace(0.1, 5.0, n).astype(np.float32)
+
+
+
 model.fit(
     X_tr, y_tr,
+    sample_weight=w_tr,
     eval_set=[(X_va, y_va)],
-    verbose=False,
+    verbose=False
 )
+
+
 
 # ----------------- Evaluation -----------------
 def eval_set(Xs, ys, name):
@@ -196,3 +225,5 @@ top = sorted(imp_gain.items(), key=lambda x: x[1], reverse=True)#[:40]
 print("Top-Features (gain):")
 for k, v in top:
     print(k, round(v, 3))
+
+model.save_model("xgb_fight_model.json")
