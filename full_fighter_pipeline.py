@@ -145,7 +145,7 @@ def compute_dominance_simple(m):
 
 
 
-def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, dominance_score: float | None = None, K: float = 80):
+def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, dominance_score: float | None = None, K: float = 80, scale: float = 250.0) -> tuple[float, float]:
     """
     Berechnet neue Elo-Werte für Fighter A und B.
     Gibt (elo_a_post, elo_b_post) zurück.
@@ -157,15 +157,20 @@ def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fi
     # Tatsächliche Ergebnisse
     if winner == fighterA:
         Sa, Sb = 1, 0
+        sign = 1
     elif winner == fighterB:
         Sa, Sb = 0, 1
+        sign = -1
     else:
         Sa, Sb = 0.5, 0.5  # Draw oder NC
+        sign = 0
 
     dom_mult = 1.0
     if dominance_score is not None:
 
-        dom_mult = 1.0 + max(-1.0, min(1.0, dominance_score / 100.0))
+        adj = sign * dominance_score / scale
+        adj = max(-1.0, min(1.0, adj))  # clamp
+        dom_mult = 1 + adj
 
     K *= dom_mult
 
