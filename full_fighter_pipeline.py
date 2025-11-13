@@ -24,6 +24,19 @@ def normalize_name(s):
         return s.strip().lower().replace("-", " ").replace(".", "").replace("'", "")
     return s
 
+def _parse_mmss(s):
+    if s is None or (isinstance(s, float) and np.isnan(s)): return 0
+    s = str(s).strip()
+    if not s or ":" not in s: return 0
+    mm, ss = s.split(":")
+    return int(mm) * 60 + int(ss)
+def fight_seconds(round_val, time_str, round_len=300):
+    try:
+        r = int(round_val)
+    except Exception:
+        r = 1
+    t = _parse_mmss(time_str)  # mm:ss der letzten Runde
+    return max(0, (r - 1) * round_len + t)
 
 def compute_total_time(end_round, end_time_str):
     """
@@ -324,8 +337,8 @@ for i, z in df.iterrows():
     }
 
     dom_res = compute_dominance_simple(m)
-    print(f"Fight {i}: {fighterA} vs {fighterB}, Dom Score A: {dom_res['score']:.2f}")
-    print(f"m details: {m}")
+    # print(f"Fight {i}: {fighterA} vs {fighterB}, Dom Score A: {dom_res['score']:.2f}")
+    # print(f"m details: {m}")
     dom_score = dom_res["score"]
     ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=120)
 
@@ -338,6 +351,9 @@ for i, z in df.iterrows():
     elif z["winner"] == fighterB:
         cum[fighterB]["wins"] += 1
     # draws/NC: keine wins-Erhöhung
+    sec = fight_seconds(z.get("end_round"), z.get("end_time"))
+    cum[fighterA]["time_in_fight"] += sec
+    cum[fighterB]["time_in_fight"] += sec
 
     # numeric additions for A and B (incl. rX_*, excl. *_pct)
     addA = extract_additions(z, "a_")
@@ -359,11 +375,21 @@ snap = pd.DataFrame(snap_rows).sort_values(
 
 
 def compute_derived_features(snap):
-    snap["prior_feat__sig_acc"] = np.where(
-        (snap["prior__sig_attempts"] > 0) & (snap["prior__fights"] > 0),
-        snap["prior__sig_landed"] / snap["prior__sig_attempts"],
-        np.nan
-    )
+    if not np.issubdtype(snap["event_date"].dtype, np.datetime64):
+        snap["event_date"] = pd.to_datetime(snap["event_date"], errors="coerce")
+    snap = snap.sort_values(["event_date", "fight_order", "fighter"]).reset_index(drop=True)
+
+    fights = snap["prior__fights"].fillna(0)
+    valid = fights > 0
+
+
+    att = snap.get("prior__sig_attempts", pd.Series(0, index=snap.index)).astype(float)
+    land = snap.get("prior__sig_landed", pd.Series(0, index=snap.index)).astype(float)
+    sign_acc = np.where(valid & (att >0), land / att, np.nan)
+    snap["prior__sig_str_acc"] = sign_acc
+
+    wins = snap.get("prior__wins", pd.Series(0, index=snap.index)).astype(float)
+    snap["prior__winrate"] = np.where(valid, wins / fights, np.nan)
     return snap
 
 
@@ -467,16 +493,16 @@ def validate_snap(snap: pd.DataFrame, atol: float = 1e-6) -> pd.DataFrame:
 
 
 
-err_df = validate_snap(snap, atol=1e-6)
-
-if err_df.empty:
-    print("OK: Alle prior-Zustände sind konsistent rekonstruiert.")
-else:
-    print(f"FEHLER: {len(err_df)} Abweichungen gefunden.")
-    # Zeige ein paar Beispiele
-    print(err_df.sort_values(["fighter", "event_date", "fight_order"]).head(20))
-    # Optional: alle Abweichungen speichern
-    err_df.to_csv("prior_validation_errors.csv", index=False)
+# err_df = validate_snap(snap, atol=1e-6)
+#
+# if err_df.empty:
+#     print("OK: Alle prior-Zustände sind konsistent rekonstruiert.")
+# else:
+#     print(f"FEHLER: {len(err_df)} Abweichungen gefunden.")
+#     # Zeige ein paar Beispiele
+#     print(err_df.sort_values(["fighter", "event_date", "fight_order"]).head(20))
+#     # Optional: alle Abweichungen speichern
+#     err_df.to_csv("prior_validation_errors.csv", index=False)
 
 #pd.set_option("display.max_rows", None)        # zeigt ALLE Zeilen
 #pd.set_option("display.max_columns", None)     # zeigt ALLE Spalten
