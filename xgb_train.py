@@ -180,7 +180,7 @@ print("XGb boost results:")
 
 # ----------------- Model & Training -----------------
 model = xgb.XGBClassifier(
-    scale_pos_weight=(y == 0).sum() / (y == 1).sum(),
+    scale_pos_weight=(y_tr == 0).sum() / (y_tr == 1).sum(),
     n_estimators=3000,
     learning_rate=0.02,
     max_depth=4,

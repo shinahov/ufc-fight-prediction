@@ -374,23 +374,75 @@ snap = pd.DataFrame(snap_rows).sort_values(
 ).reset_index(drop=True)
 
 
-def compute_derived_features(snap):
-    if not np.issubdtype(snap["event_date"].dtype, np.datetime64):
-        snap["event_date"] = pd.to_datetime(snap["event_date"], errors="coerce")
-    snap = snap.sort_values(["event_date", "fight_order", "fighter"]).reset_index(drop=True)
 
-    fights = snap["prior__fights"].fillna(0)
-    valid = fights > 0
+def compute_derived_features(snap: pd.DataFrame) -> pd.DataFrame:
+    df = snap.copy()
 
+    if not np.issubdtype(df["event_date"].dtype, np.datetime64):
+        df["event_date"] = pd.to_datetime(df["event_date"], errors="coerce")
+    df = df.sort_values(["event_date", "fight_order", "fighter"], kind="mergesort").reset_index(drop=True)
 
-    att = snap.get("prior__sig_attempts", pd.Series(0, index=snap.index)).astype(float)
-    land = snap.get("prior__sig_landed", pd.Series(0, index=snap.index)).astype(float)
-    sign_acc = np.where(valid & (att >0), land / att, np.nan)
-    snap["prior__sig_str_acc"] = sign_acc
+    eps = 1e-9
+    fights = df["prior__fights"].fillna(0.0).astype(float)
+    valid  = fights > 0
 
-    wins = snap.get("prior__wins", pd.Series(0, index=snap.index)).astype(float)
-    snap["prior__winrate"] = np.where(valid, wins / fights, np.nan)
-    return snap
+    t_sec   = df["prior__time_in_fight"].fillna(0.0).astype(float)
+    mins    = np.maximum(t_sec / 60.0, eps)
+    per15   = 15.0 / np.maximum(mins, eps)
+
+    def safe_div(a, b):
+        a = a.astype(float)
+        b = np.maximum(b.astype(float), eps)
+        return a / b
+
+    df["prior__sig_str_acc"] = np.where(valid, safe_div(df["prior__sig_landed"], df["prior__sig_attempts"]), np.nan)
+    df["prior__td_acc"]      = np.where(valid, safe_div(df["prior__td_landed"],  df["prior__td_attempts"]),  np.nan)
+
+    df["prior__sig_str_def"] = np.where(valid, 1.0 - safe_div(df["prior__sig_landed_rec"], df["prior__sig_attempts_rec"]), np.nan)
+    df["prior__td_def"]      = np.where(valid, 1.0 - safe_div(df["prior__td_landed_rec"],  df["prior__td_attempts_rec"]),  np.nan)
+
+    df["prior__sig_att_per_min"]  = np.where(valid, df["prior__sig_attempts"] / mins, np.nan)
+    df["prior__sig_land_per_min"] = np.where(valid, df["prior__sig_landed"]   / mins, np.nan)
+    df["prior__td_att_per_min"]   = np.where(valid, df["prior__td_attempts"]  / mins, np.nan)
+    df["prior__td_land_per_min"]  = np.where(valid, df["prior__td_landed"]    / mins, np.nan)
+    df["prior__ctrl_per_min"]     = np.where(valid, df["prior__ctrl_sec"]     / np.maximum(t_sec, eps), np.nan) * 60.0
+    df["prior__sub_att_per15"]    = np.where(valid, df["prior__sub_att"] * per15, np.nan)
+    df["prior__rev_per15"]        = np.where(valid, df["prior__rev"]     * per15, np.nan)
+    df["prior__kd_per15"]         = np.where(valid, df["prior__kd"]      * per15, np.nan)
+    df["prior__kd_against_per15"] = np.where(valid, df["prior__kd_rec"]  * per15, np.nan)
+
+    head_a = df["prior__ss_head_a"].fillna(0.0)
+    body_a = df["prior__ss_body_a"].fillna(0.0)
+    leg_a = df["prior__ss_leg_a"].fillna(0.0)
+    ss_a   = np.maximum(df["prior__ss_attempts"].fillna(0.0), eps)
+    df["prior__share_head_attempts"] = np.where(valid, (head_a / ss_a), np.nan)
+    df["prior__share_body_attempts"] = np.where(valid, (body_a / ss_a), np.nan)
+    df["prior__share_leg_attempts"]  = np.where(valid, (leg_a  / ss_a), np.nan)
+
+    dist_a = df["prior__ss_distance_a"].fillna(0.0)
+    clin_a = df["prior__ss_clinch_a"].fillna(0.0)
+    grd_a = df["prior__ss_ground_a"].fillna(0.0)
+    df["prior__share_distance_attempts"] = np.where(valid, (dist_a / ss_a), np.nan)
+    df["prior__share_clinch_attempts"]   = np.where(valid, (clin_a / ss_a), np.nan)
+    df["prior__share_ground_attempts"]   = np.where(valid, (grd_a  / ss_a), np.nan)
+
+    df["prior__sig_land_margin_per_min"] = np.where(valid, (df["prior__sig_landed"] - df["prior__sig_landed_rec"]) / mins, np.nan)
+    df["prior__sig_att_margin_per_min"]  = np.where(valid, (df["prior__sig_attempts"] - df["prior__sig_attempts_rec"]) / mins, np.nan)
+    df["prior__td_land_margin_per_min"]  = np.where(valid, (df["prior__td_landed"]   - df["prior__td_landed_rec"])   / mins, np.nan)
+    df["prior__ctrl_margin_per_min"]     = np.where(valid, (df["prior__ctrl_sec"]    - df["prior__ctrl_sec_rec"])    / np.maximum(t_sec, eps), np.nan) * 60.0
+
+    df["prior__ss_acc"] = np.where(valid, safe_div(df["prior__ss_landed"], df["prior__ss_attempts"]), np.nan)
+    df["prior__ss_def"] = np.where(valid, 1.0 - safe_div(df["prior__ss_landed_rec"], df["prior__ss_attempts_rec"]), np.nan)
+
+    df["prior__winrate"]           = np.where(valid, safe_div(df["prior__wins"], fights), np.nan)
+    df["prior__avg_fight_len_min"] = np.where(valid, (t_sec / fights) / 60.0, np.nan)
+
+    r_sig_l = (df.get("prior__r1_sig_l", 0).fillna(0) +
+               df.get("prior__r2_sig_l", 0).fillna(0) +
+               df.get("prior__r3_sig_l", 0).fillna(0)).astype(float)
+    df["prior__round_sig_lpm"] = np.where(valid, r_sig_l / mins, np.nan)
+
+    return df
 
 
 snap = compute_derived_features(snap)
