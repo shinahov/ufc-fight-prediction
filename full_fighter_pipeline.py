@@ -292,6 +292,11 @@ for i, z in df.iterrows():
     prior_stats_A = get_stats(fighterA, date)
     prior_stats_B = get_stats(fighterB, date)
 
+    last_date_A = cum[fighterA].get("last_fight_date")
+    last_date_B = cum[fighterB].get("last_fight_date")
+    priorA["last_fight_days"] = float((date - last_date_A).days) if last_date_A is not None else np.nan
+    priorB["last_fight_days"] = float((date - last_date_B).days) if last_date_B is not None else np.nan
+
     # ---- Write snapshots (prior) ----
     # We attach ALL raw fight columns + prior__*
     raw = z.to_dict()
@@ -303,7 +308,11 @@ for i, z in df.iterrows():
         "opponent": fighterB,
         "winner": z["winner"],
         **raw,
-        **{f"prior__{k}": float(v) for k, v in priorA.items()},
+        **{
+              f"prior__{k}": float(v)
+              for k, v in priorA.items()
+              if isinstance(v, (int, float, np.integer, np.floating)) or pd.isna(v)
+          },
         **{f"prior_stats__{k}": float(v) if is_number(v) else v for k, v in prior_stats_A.items()}
     })
     snap_rows.append({
@@ -313,7 +322,11 @@ for i, z in df.iterrows():
         "opponent": fighterA,
         "winner": z["winner"],
         **raw,
-        **{f"prior__{k}": float(v) for k, v in priorB.items()},
+        **{
+              f"prior__{k}": float(v)
+              for k, v in priorB.items()
+              if isinstance(v, (int, float, np.integer, np.floating)) or pd.isna(v)
+          },
         **{f"prior_stats__{k}": float(v) if is_number(v) else v for k, v in prior_stats_B.items()}
     })
 
@@ -367,6 +380,8 @@ for i, z in df.iterrows():
 
     cum[fighterA]["elo"] = ra_post
     cum[fighterB]["elo"] = rb_post
+    cum[fighterA]["last_fight_date"] = date
+    cum[fighterB]["last_fight_date"] = date
 
 # --------------- Result DataFrames ---------------
 snap = pd.DataFrame(snap_rows).sort_values(
@@ -410,6 +425,7 @@ def compute_derived_features(snap: pd.DataFrame) -> pd.DataFrame:
     df["prior__rev_per15"]        = np.where(valid, df["prior__rev"]     * per15, np.nan)
     df["prior__kd_per15"]         = np.where(valid, df["prior__kd"]      * per15, np.nan)
     df["prior__kd_against_per15"] = np.where(valid, df["prior__kd_rec"]  * per15, np.nan)
+    df["prior__avg_fight_time_min"] = np.where(valid, (t_sec / fights) / 60.0, np.nan)
 
     head_a = df["prior__ss_head_a"].fillna(0.0)
     body_a = df["prior__ss_body_a"].fillna(0.0)
