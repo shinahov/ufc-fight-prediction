@@ -1,76 +1,65 @@
-UFC Fight Outcome Prediction
+# UFC Fight Outcome Prediction
 
-This project focuses on predicting the outcome of UFC fights using machine learning.
-The goal was to build a clean, realistic end-to-end pipeline that avoids common mistakes such as data leakage and incorrect historical reconstruction of fighter statistics.
+This project focuses on predicting the outcome of UFC fights using machine learning. The goal is to build a clean, realistic end-to-end pipeline that avoids common issues such as data leakage and incorrect historical reconstruction of fighter statistics.
 
-Motivation
+## Motivation
+Many UFC prediction projects use *current* fighter data (e.g., today's win/loss record, current reach, current age).  
+This causes **data leakage**, because the model trains on information that did **not** exist at the time of the fight.
 
-Most UFC prediction projects online use the current fighter data (e.g., current win/loss, current age, current reach).
-This creates data leakage, because you train on information that did not exist at the time of the fight.
+To avoid this, the pipeline reconstructs each fighter’s historical profile using only the information available **before** each event.
 
-To solve this, I built a pipeline that reconstructs historical fighter data, based only on information available at the date of each event.
+## Data Collection
 
-Data Collection
-1. Event Scraper (new_event_scraper)
+### Event Scraper (`new_event_scraper`)
+Collects all historical UFC events from UFC Stats:
 
-This scraper collects all historical UFC events from the UFC Stats website.
-For every event, it extracts:
+- All fights in each event  
+- Fighters involved  
+- Basic statistics as they appeared on that event date  
 
-Fights
+This dataset is the primary training source, because it represents the fighters’ state *at the time of the fight*.
 
-Fighters involved
+### Fighter Scraper
+Collects current fighter profiles from UFC Stats.
 
-Basic statistics from that specific event date
+This data is **not used** for model training because:
 
-This is the main data source used for training, because it reflects the fighters' state at the time of each fight.
+- It shows the fighter’s stats *today*, not historically  
+- Using it would leak future information  
 
-2. Fighter Scraper
+It is included only for analysis and completeness.
 
-This scraper collects current fighter profiles.
+## Historical Reconstruction (`full_fighter_pipeline`)
+This is the core of the project. It builds each fighter’s historical stats by accumulating data only up to the fight date.
 
-However, this data cannot be used for training a historical model because:
+Properties:
 
-It shows the fighter's stats today, not at the time of past fights
+- No future data is used  
+- Each fighter’s profile reflects exactly what was known *before* the fight  
+- Prevents all major forms of data leakage  
 
-Using it would leak future information into the training set
+This solves the primary issue found in many UFC prediction attempts.
 
-Therefore, this scraper is included for completeness, but not used in the final model pipeline.
+## Modeling
 
-Historical Reconstruction (full_fighter_pipeline)
+Experiments are implemented in:
 
-The full_fighter_pipeline is the core part of the project.
-It accumulates fighter statistics only up to the date of each fight, ensuring that:
+- `model_experiment`
+- `xgb_train`
 
-No future data is included
+Explored:
 
-Each fighter’s profile reflects their experience up to that event
+- Multiple feature sets  
+- Different preprocessing strategies  
+- Baseline models and tree-based models  
 
-The model sees only “realistic” historical features
+## Best Result
+Using **XGBoost**:
 
-This step solves the major problem of data leakage that appeared in earlier attempts.
+- **Test Accuracy:** ~66%  
+- **AUC:** ~70%  
 
-Modeling
+Despite the randomness of MMA outcomes, the model captures meaningful predictive patterns.
 
-All experiments are implemented in:
-
-model_experiment
-
-xgb_train
-
-Several approaches were tested:
-
-Different feature sets
-
-Different preprocessing strategies
-
-Multiple ML models (baseline models, tree models, etc.)
-
-Best Result
-
-The best performance was achieved using XGBoost:
-
-Test Accuracy: ~66%
-
-AUC: ~70%
-
-This indicates that the model is able to capture meaningful patterns, despite the natural randomness and unpredictability of UFC fights.
+## Summary
+This project builds a realistic UFC prediction pipeline by reconstructing historical fighter data and eliminating leakage, resulting in a solid and reliable predictive model.
