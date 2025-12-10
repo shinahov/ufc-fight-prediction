@@ -4,14 +4,14 @@ import pandas as pd
 from collections import defaultdict
 
 # --- Load & sort ---
-df = pd.read_csv("fights_new.csv")
-df_stats = pd.read_csv("fighter_stats_imputed.csv")
+df = pd.read_csv("../fights_new.csv")
+df_stats = pd.read_csv("../fighter_stats_imputed.csv")
 df["event_date"] = pd.to_datetime(df["event_date"])
 df = df.sort_values("event_date", ascending=True).reset_index(drop=True)
 
 # --- Helpers / Regex ---
 SIDE_PREFIXES = ("a_", "b_")
-PCT_RE = re.compile(r"_pct$")                    # Prozent-Metriken ausschließen
+PCT_RE = re.compile(r"_pct$")                    # get rid of *_pct columns
 ROUND_RE = re.compile(r"^r([1-5])_")             # r1_, r2_, ... r5_
 META_COLS = {
     "event","event_date","fight_title",
@@ -30,20 +30,16 @@ def _parse_mmss(s):
     if not s or ":" not in s: return 0
     mm, ss = s.split(":")
     return int(mm) * 60 + int(ss)
+
 def fight_seconds(round_val, time_str, round_len=300):
     try:
         r = int(round_val)
     except Exception:
         r = 1
-    t = _parse_mmss(time_str)  # mm:ss der letzten Runde
+    t = _parse_mmss(time_str)  # mm:ss
     return max(0, (r - 1) * round_len + t)
 
 def compute_total_time(end_round, end_time_str):
-    """
-    Berechnet die vergangene Zeit im Kampf in Sekunden.
-    end_round: int (1–5)
-    end_time_str: 'M:SS', z.B. '4:22'
-    """
     try:
         minutes, seconds = map(int, str(end_time_str).split(":"))
     except Exception:
@@ -52,9 +48,7 @@ def compute_total_time(end_round, end_time_str):
 
 
 def categorize_method(method_raw: str) -> str:
-    """
-    Normalisiert die Finish-/Methodenbeschreibung in feste Kategorien.
-    """
+    #normalize finish method into categories
     s = (method_raw or "").strip().lower()
     s = s.replace("’", "'").replace("—", "-")
 
@@ -82,9 +76,7 @@ def categorize_method(method_raw: str) -> str:
 
 
 def compute_finish_units(method_cat: str, t: float, Ttot: float) -> float:
-    """
-    Berechnet die Strike-äquivalenten Finish-Punkte basierend auf Methode und Zeit.
-    """
+    # for elo calculation assign base units to finish methods
     BASE_UNITS = {
         "ko_tko": 25.0,
         "sub": 20.0,
@@ -112,10 +104,7 @@ def compute_finish_units(method_cat: str, t: float, Ttot: float) -> float:
 
 
 def compute_dominance_simple(m):
-    """
-    Berechnet den Dominanz-Score für Fighter A.
-    """
-    # --- Äquivalenzen ---
+    # make a simple dominance score from basic metrics with equivalencies to strikes for simplicity
     TD_EQ_SIG   = 5.0
     CTRL_SIG_S  = TD_EQ_SIG / 40
     KD_EQ_SIG   = 8.0
@@ -127,18 +116,14 @@ def compute_dominance_simple(m):
     kd_net   = float(m.get("knockdowns_a", 0))  - float(m.get("knockdowns_b", 0))
     winner_side = m.get("winner", None)
 
-    # --- Basisscore in Strike-Einheiten ---
     sig_units = sig_net + TD_EQ_SIG*td_net + CTRL_SIG_S*ctrl_net + KD_EQ_SIG*kd_net
 
-    # --- Zeitberechnung ---
     t = compute_total_time(m.get("end_round", 5), m.get("end_time", "5:00"))
     Ttot = 1500.0
 
-    # --- Methode & Finish-Einheiten ---
     method_cat = categorize_method(m.get("method") or m.get("finish"))
     finish_units = compute_finish_units(method_cat, t, Ttot)
 
-    # --- Gesamtscore ---
     if winner_side == "A":
         score = sig_units + finish_units
     elif winner_side == "B":
@@ -158,16 +143,14 @@ def compute_dominance_simple(m):
 
 
 
-def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fighterB: str, dominance_score: float | None = None, K: float = 80, scale: float = 250.0) -> tuple[float, float]:
-    """
-    Berechnet neue Elo-Werte für Fighter A und B.
-    Gibt (elo_a_post, elo_b_post) zurück.
-    """
-    # Erwartete Gewinnwahrscheinlichkeiten
+def update_elo(elo_a: float, elo_b: float, winner: str | None,
+               fighterA: str, fighterB: str, dominance_score: float | None = None,
+               K: float = 80, scale: float = 250.0) -> tuple[float, float]:
+    # expected E values
     Ea = 1 / (1 + 10 ** ((elo_b - elo_a) / 250))
     Eb = 1 - Ea
 
-    # Tatsächliche Ergebnisse
+    # actual S values
     if winner == fighterA:
         Sa, Sb = 1, 0
         sign = 1
@@ -175,7 +158,7 @@ def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fi
         Sa, Sb = 0, 1
         sign = -1
     else:
-        Sa, Sb = 0.5, 0.5  # Draw oder NC
+        Sa, Sb = 0.5, 0.5  # Draw or NC
         sign = 0
 
     dom_mult = 1.0
@@ -187,14 +170,13 @@ def update_elo(elo_a: float, elo_b: float, winner: str | None, fighterA: str, fi
 
     K *= dom_mult
 
-    # Neue Ratings
+    # Neu Ratings
     ra_post = elo_a + K * (Sa - Ea)
     rb_post = elo_b + K * (Sb - Eb)
 
     return ra_post, rb_post
 
 def new_fighter_state():
-    """Cumulative store per fighter: dynamic numeric metrics + fights/wins."""
     d = defaultdict(float)
     d["fights"] = 0.0
     d["wins"]   = 0.0
@@ -238,13 +220,6 @@ def is_number(x) -> bool:
     return isinstance(x, (int, float, np.integer, np.floating)) and np.isfinite(x)
 
 def extract_additions(row: pd.Series, side_prefix: str) -> dict[str, float]:
-    """
-    Liefert ALLE additiven Metriken für eine Seite:
-    - inkludiert round-based: rX_<side>..., key -> 'rX_<metricohneside>'
-    - inkludiert non-round: <side>..., key -> '<metricohneside>'
-    - exkludiert *_pct
-    - nur numerische Werte
-    """
     add = defaultdict(float)
 
     # 1) Round-based rX_<side>...
@@ -254,14 +229,13 @@ def extract_additions(row: pd.Series, side_prefix: str) -> dict[str, float]:
         m = ROUND_RE.match(col)
         if not m:
             continue
-        # nach rX_ muss side_prefix folgen
         rest = col[m.end():]
         if not rest.startswith(side_prefix):
             continue
-        if PCT_RE.search(rest):  # rX_a_ss_pct etc. raus
+        if PCT_RE.search(rest):
             continue
-        metric_no_side = rest[len(side_prefix):]  # z.B. 'sig_l', 'td_a', 'ctrl_sec'
-        key = f"r{m.group(1)}_{metric_no_side}"   # z.B. 'r1_sig_l'
+        metric_no_side = rest[len(side_prefix):]  # 'sig_l', 'td_a', 'ctrl_sec'..
+        key = f"r{m.group(1)}_{metric_no_side}"   # 'r1_sig_l'..
         add[key] += float(val)
 
     # 2) Non-round <side>...
@@ -272,9 +246,9 @@ def extract_additions(row: pd.Series, side_prefix: str) -> dict[str, float]:
             continue
         if PCT_RE.search(col):
             continue
-        if ROUND_RE.match(col):  # rX_* schon oben behandelt
+        if ROUND_RE.match(col):
             continue
-        metric_no_side = col[len(side_prefix):]   # z.B. 'sig_landed', 'sig_l', ...
+        metric_no_side = col[len(side_prefix):]   #'sig_landed', 'sig_l', ...
         add[metric_no_side] += float(val)
 
     return dict(add)
@@ -297,7 +271,7 @@ for i, z in df.iterrows():
     priorA["last_fight_days"] = float((date - last_date_A).days) if last_date_A is not None else np.nan
     priorB["last_fight_days"] = float((date - last_date_B).days) if last_date_B is not None else np.nan
 
-    # ---- Write snapshots (prior) ----
+    #Write snapshots (prior)
     # We attach ALL raw fight columns + prior__*
     raw = z.to_dict()
 
@@ -350,12 +324,10 @@ for i, z in df.iterrows():
     }
 
     dom_res = compute_dominance_simple(m)
-    # print(f"Fight {i}: {fighterA} vs {fighterB}, Dom Score A: {dom_res['score']:.2f}")
-    # print(f"m details: {m}")
     dom_score = dom_res["score"]
     ra_post, rb_post = update_elo(elo_a, elo_b, z["winner"], fighterA, fighterB, dominance_score=dom_score, K=120)
 
-    # ---- Update cumulative states with this fight ----
+    # Update cumulative states with this fight
     # fights/wins
     cum[fighterA]["fights"] += 1
     cum[fighterB]["fights"] += 1
@@ -363,7 +335,7 @@ for i, z in df.iterrows():
         cum[fighterA]["wins"] += 1
     elif z["winner"] == fighterB:
         cum[fighterB]["wins"] += 1
-    # draws/NC: keine wins-Erhöhung
+    # draws/NC:
     sec = fight_seconds(z.get("end_round"), z.get("end_time"))
     cum[fighterA]["time_in_fight"] += sec
     cum[fighterB]["time_in_fight"] += sec
@@ -383,7 +355,7 @@ for i, z in df.iterrows():
     cum[fighterA]["last_fight_date"] = date
     cum[fighterB]["last_fight_date"] = date
 
-# --------------- Result DataFrames ---------------
+# Result DataFrames
 snap = pd.DataFrame(snap_rows).sort_values(
     ["event_date", "fight_order", "fighter"]
 ).reset_index(drop=True)
@@ -466,30 +438,25 @@ snap = compute_derived_features(snap)
 
 # Convenience: history getter
 def get_fighter_history(name: str) -> pd.DataFrame:
-    """Alle Zeilen für 'name' mit Rohdaten + prior__* (inkl. rundenbasierter prior__rX_*)."""
     out = snap.loc[snap["fighter"] == name].copy()
     return out.sort_values(["event_date", "fight_order"]).reset_index(drop=True)
 
-# Optional: nur prior-Spalten (breit)
+# Optional : prior-Matrix pro Fighter
 def fighter_prior_matrix(name: str) -> pd.DataFrame:
-    """Wide-Matrix der prior-Werte (nur prior__*), Index = Fight-Order/Date."""
     hist = get_fighter_history(name)
     prior_cols = [c for c in hist.columns if c.startswith("prior__")]
     base = hist[["event_date", "fight_order", "fighter", "opponent", "winner"]]
     return pd.concat([base, hist[prior_cols]], axis=1)
 
-pd.set_option("display.max_columns", None)   # zeigt ALLE Spalten
-pd.set_option("display.width", None)         # kein Zeilenumbruch
-pd.set_option("display.max_colwidth", None)  # volle Spaltenbreite
-pd.set_option("display.max_rows", None)      # alle Zeilen (vorsichtig bei großen DFs!)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.max_rows", None)
 
 def side_prefix_from(side: str) -> str:
     return "a_" if side == "A" else "b_"
 
 def extract_prior_dict(row: pd.Series) -> dict[str, float]:
-    """
-    prior__*-Werte in ein dict ohne Prefix mappen. Fehlende/NaN -> 0.
-    """
     out = {}
     for col, val in row.items():
         if isinstance(col, str) and col.startswith("prior__"):
@@ -499,10 +466,6 @@ def extract_prior_dict(row: pd.Series) -> dict[str, float]:
     return out
 
 def validate_snap(snap: pd.DataFrame, atol: float = 1e-6) -> pd.DataFrame:
-    """
-    Prüft für alle Fighter die Rekonstruktion der prior-Zustände.
-    Gibt ein DataFrame mit Abweichungen zurück (leer = alles korrekt).
-    """
     errors = []
 
     for fighter in snap["fighter"].dropna().unique():
@@ -514,29 +477,24 @@ def validate_snap(snap: pd.DataFrame, atol: float = 1e-6) -> pd.DataFrame:
         if hist.empty:
             continue
 
-        # running_total = prior des ersten Kampfes (als dict)
+        # running_total
         running = extract_prior_dict(hist.iloc[0])
 
-        # Iteriere ab dem zweiten Eintrag; vergleiche prior[i] mit running nach Update von i-1
         for i in range(1, len(hist)):
             prev = hist.iloc[i-1]
             curr = hist.iloc[i]
 
-            # 1) Update fights/wins basierend auf prev
             running["fights"] = running.get("fights", 0.0) + 1.0
             if prev.get("winner", None) == prev.get("fighter", None):
                 running["wins"] = running.get("wins", 0.0) + 1.0
 
-            # 2) Addiere alle numerischen Fight-Additions (inkl. rX_*), exkl. *_pct
             side_prefix = side_prefix_from(prev["side"])
             adds = extract_additions(prev, side_prefix)
             for k, v in adds.items():
                 running[k] = running.get(k, 0.0) + float(v)
 
-            # 3) Erwartung vs. tatsächliches prior im aktuellen Datensatz
             curr_prior = extract_prior_dict(curr)
 
-            # vereinheitliche Keys (alles was vorkommt)
             keys = set(running.keys()) | set(curr_prior.keys())
 
             for k in keys:
@@ -561,25 +519,10 @@ def validate_snap(snap: pd.DataFrame, atol: float = 1e-6) -> pd.DataFrame:
 
 
 
-# err_df = validate_snap(snap, atol=1e-6)
-#
-# if err_df.empty:
-#     print("OK: Alle prior-Zustände sind konsistent rekonstruiert.")
-# else:
-#     print(f"FEHLER: {len(err_df)} Abweichungen gefunden.")
-#     # Zeige ein paar Beispiele
-#     print(err_df.sort_values(["fighter", "event_date", "fight_order"]).head(20))
-#     # Optional: alle Abweichungen speichern
-#     err_df.to_csv("prior_validation_errors.csv", index=False)
-
-#pd.set_option("display.max_rows", None)        # zeigt ALLE Zeilen
-#pd.set_option("display.max_columns", None)     # zeigt ALLE Spalten
-#pd.set_option("display.width", None)           # keine Zeilenumbrüche
-#pd.set_option("display.max_colwidth", None)    # volle Spaltenbreite
 print(snap.tail(10))
 snap.to_csv("snapshot.csv", index=False)
 
-snap2 = pd.read_csv("snapshot.csv")
+snap2 = pd.read_csv("../snapshot.csv")
 print(len(snap2), "Zeilen")       # sollte == len(snap)
 print(len(snap2.columns), "Spalten")
 
@@ -590,4 +533,3 @@ print("Top 20 Fighter nach Elo:")
 for name, elo in top20:
     print(f"{name:25s} {elo:.2f}")
 
-#print(snap)
